@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Futuristic Neon Glass Theme - Dark Mode Default */
+    --background: 240 10% 8%;
+    --foreground: 180 100% 95%;
+
+    --card: 240 10% 12% / 0.6;
+    --card-foreground: 180 100% 95%;
+
+    --popover: 240 10% 10% / 0.9;
+    --popover-foreground: 180 100% 95%;
+
+    --primary: 180 100% 50%;
+    --primary-foreground: 240 10% 8%;
+
+    --secondary: 280 100% 60%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 10% 20% / 0.5;
+    --muted-foreground: 180 50% 70%;
+
+    --accent: 320 100% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 180 100% 50% / 0.2;
+    --input: 240 10% 15% / 0.6;
+    --ring: 180 100% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 240 10% 10% / 0.7;
+    --sidebar-foreground: 180 100% 95%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 240 10% 8%;
+    --sidebar-accent: 240 10% 20% / 0.5;
+    --sidebar-accent-foreground: 180 100% 95%;
+    --sidebar-border: 180 100% 50% / 0.2;
+    --sidebar-ring: 180 100% 50%;
+
+    --chart-1: 180 100% 50%;
+    --chart-2: 280 100% 60%;
+    --chart-3: 320 100% 50%;
+    --chart-4: 200 100% 50%;
+    --chart-5: 260 100% 60%;
+
+    /* Glass Morphism Effects */
+    --glass-bg: 240 10% 12% / 0.4;
+    --glass-border: 180 100% 50% / 0.3;
+    --neon-glow: 180 100% 50%;
+    --neon-glow-secondary: 280 100% 60%;
+    --neon-glow-accent: 320 100% 50%;
+  }
+
+  .dark {
+    --background: 240 10% 8%;
+    --foreground: 180 100% 95%;
+
+    --card: 240 10% 12% / 0.6;
+    --card-foreground: 180 100% 95%;
+
+    --popover: 240 10% 10% / 0.9;
+    --popover-foreground: 180 100% 95%;
+
+    --primary: 180 100% 50%;
+    --primary-foreground: 240 10% 8%;
+
+    --secondary: 280 100% 60%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 10% 20% / 0.5;
+    --muted-foreground: 180 50% 70%;
+
+    --accent: 320 100% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 180 100% 50% / 0.2;
+    --input: 240 10% 15% / 0.6;
+    --ring: 180 100% 50%;
+
+    --sidebar-background: 240 10% 10% / 0.7;
+    --sidebar-foreground: 180 100% 95%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 240 10% 8%;
+    --sidebar-accent: 240 10% 20% / 0.5;
+    --sidebar-accent-foreground: 180 100% 95%;
+    --sidebar-border: 180 100% 50% / 0.2;
+    --sidebar-ring: 180 100% 50%;
+
+    --chart-1: 180 100% 50%;
+    --chart-2: 280 100% 60%;
+    --chart-3: 320 100% 50%;
+    --chart-4: 200 100% 50%;
+    --chart-5: 260 100% 60%;
+
+    --glass-bg: 240 10% 12% / 0.4;
+    --glass-border: 180 100% 50% / 0.3;
+    --neon-glow: 180 100% 50%;
+    --neon-glow-secondary: 280 100% 60%;
+    --neon-glow-accent: 320 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background-image: 
+      radial-gradient(circle at 20% 50%, hsl(180 100% 50% / 0.05) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, hsl(280 100% 60% / 0.05) 0%, transparent 50%),
+      radial-gradient(circle at 40% 20%, hsl(320 100% 50% / 0.03) 0%, transparent 50%);
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl border border-border shadow-lg;
+  }
+  
+  .glass-strong {
+    @apply bg-card/80 backdrop-blur-2xl border border-border shadow-2xl;
+  }
+
+  .neon-border {
+    @apply border-2 border-primary shadow-[0_0_10px_hsl(var(--primary)/0.5)];
+  }
+
+  .neon-glow {
+    @apply shadow-[0_0_20px_hsl(var(--primary)/0.4)];
+  }
+
+  .neon-text {
+    @apply text-primary drop-shadow-[0_0_8px_hsl(var(--primary)/0.8)];
+  }
+}
