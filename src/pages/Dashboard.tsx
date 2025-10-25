@@ -16,14 +16,14 @@ const personas = [
   },
   {
     id: 2,
-    name: "Cloud Architect",
+    name: "Jira Administrator",
     description: "Specialized in AWS, Azure, and cloud infrastructure design",
     skills: ["AWS", "Azure", "Cloud", "Infrastructure"],
     isOnline: false,
   },
   {
     id: 3,
-    name: "Security Analyst",
+    name: "Grafana Specialist",
     description: "Focused on security best practices, threat detection, and compliance",
     skills: ["Security", "Compliance", "Threat Detection"],
     isOnline: true,
@@ -85,7 +85,7 @@ const Dashboard = () => {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <div className="h-16 border-b border-border bg-card flex items-center justify-between px-6">
-          <h1 className="text-lg font-semibold">Dynamic Persona Based Chat</h1>
+          <h1 className="text-lg font-semibold">Persona Chat</h1>
           <Button
             variant="ghost"
             size="icon"
