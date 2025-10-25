@@ -1,3 +1,4 @@
+// external_ui/src/components/ChatInterface.tsx
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 interface Persona {
   id: number;
-  name: string;
+  name: string;          // e.g., "Jenkins Specialist"
   description: string;
   skills: string[];
 }
@@ -17,32 +18,181 @@ interface ChatInterfaceProps {
 
 interface Message {
   id: number;
-  role: "user" | "assistant";
+  type: "human" | "assistant";
   content: string;
 }
+
+type BackendMessage = { type?: string; content?: string };
+
+// --- CONFIG ------------------------------------------------------------------
+
+// Backend base URL (e.g. http://localhost:8000 or your deployed URL)
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
+// Map persona -> endpoint path
+const personaEndpointMap: Record<string, string> = {
+  // match by persona name (case-insensitive); add more as you add personas
+  "jenkins specialist": "/chat/jenkins",
+  "jenkins": "/chat/jenkins",
+  // "jira specialist": "/chat/jira",
+  // "kubernetes sre": "/chat/kubernetes",
+};
+
+// Pull an auth token (adjust key to your app’s storage conventions)
+function getAuthToken(): string | null {
+  // ex: localStorage.setItem("auth_token", "Bearer eyJhbGciOi...")
+  const raw = localStorage.getItem("auth_token");
+  return raw ?? null;
+}
+
+// Optional: read Jenkins creds from localStorage or elsewhere (keeps UI unchanged)
+function getJenkinsCreds() {
+  return {
+    cred_id: localStorage.getItem("cred_id") || "main",
+    user_id: localStorage.getItem("user_id") || "tool20",
+    jenkins_url: localStorage.getItem("jenkins_url") || "",
+    username: localStorage.getItem("jenkins_username") || "",
+    api_token: localStorage.getItem("jenkins_api_token") || "",
+    jenkins_proxy_url: localStorage.getItem("jenkins_proxy_url") || "",
+  };
+}
+
+// Build backend payloads per persona. You can extend this switch for others.
+function buildPayload(
+  persona: Persona,
+  chatMessages: Message[]
+): Record<string, any> {
+  const personality = "practical";
+  const mentality = "problem-solving";
+
+  // Convert UI messages to backend-expected minimal shape
+  const messages = chatMessages.map(m => ({
+    type: m.type,
+    content: m.content,
+  }));
+
+  const lowerName = persona.name.toLowerCase();
+
+  if (lowerName.includes("jenkins")) {
+    const creds = getJenkinsCreds();
+    return {
+      messages,
+      cred_id: creds.cred_id,
+      user_id: creds.user_id,
+      mentality,
+      personality,
+      persona_name: persona.name,
+      persona_title: persona.name,
+      jenkins_url: creds.jenkins_url,
+      username: creds.username,
+      api_token: creds.api_token,
+      jenkins_proxy_url: creds.jenkins_proxy_url,
+    };
+  }
+
+  // Default payload (mirrors common fields; add service-specific fields as needed)
+  return {
+    messages,
+    cred_id: "main",
+    user_id: "user-1",
+    mentality,
+    personality,
+    persona_name: persona.name,
+    persona_title: persona.name,
+  };
+}
+
+// Extract assistant text from a variety of possible backend shapes safely
+function extractAssistantText(respJson: any): string {
+  // Common patterns:
+  // 1) { content: "..." }
+  if (respJson?.content && typeof respJson.content === "string") {
+    return respJson.content;
+  }
+  // 2) { answer: "..." }
+  if (respJson?.answer && typeof respJson.answer === "string") {
+    return respJson.answer;
+  }
+  // 3) { messages: [{type:'assistant', content:'...'}, ...] }
+  const msgs: BackendMessage[] = Array.isArray(respJson?.messages)
+    ? respJson.messages
+    : [];
+  const lastAssistant = [...msgs].reverse().find(m => (m.type ?? "").toLowerCase() === "assistant");
+  if (lastAssistant?.content) return lastAssistant.content;
+
+  // Fallback: stringify a small part of response
+  return typeof respJson === "string"
+    ? respJson
+    : JSON.stringify(respJson ?? { message: "No response" }).slice(0, 1200);
+}
+
+// -----------------------------------------------------------------------------
 
 const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
   const navigate = useNavigate();
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const resolveEndpoint = (persona: Persona): string => {
+    const key = persona.name.toLowerCase();
+    const path =
+      personaEndpointMap[key] ||
+      // fuzzy keys by contains
+      Object.entries(personaEndpointMap).find(([k]) => key.includes(k))?.[1] ||
+      "/chat/jenkins"; // sane default
+    return `${API_BASE}${path}`;
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || sending) return;
 
     const userMessage: Message = {
       id: Date.now(),
-      role: "user",
+      type: "human",
       content: input,
     };
 
-    const assistantMessage: Message = {
-      id: Date.now() + 1,
-      role: "assistant",
-      content: `As a ${selectedPersona.name}, I can help you with ${selectedPersona.skills.join(", ")}. How can I assist you today?`,
-    };
-
-    setMessages([...messages, userMessage, assistantMessage]);
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput("");
+    setSending(true);
+
+    try {
+      const endpoint = resolveEndpoint(selectedPersona);
+      const payload = buildPayload(selectedPersona, nextMessages);
+      const token = getAuthToken();
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: token } : {}), // if token already includes "Bearer ", keep as-is
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const assistantText = extractAssistantText(data);
+
+      const assistantMessage: Message = {
+        id: Date.now() + 1,
+        type: "assistant",
+        content: assistantText || "I couldn’t parse a reply from the server.",
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (err: any) {
+      const assistantMessage: Message = {
+        id: Date.now() + 1,
+        type: "assistant",
+        content:
+          "Request failed. Please check your API base URL, credentials, and network, then try again.",
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -96,18 +246,16 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
           messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              className={`flex ${message.type === "human" ? "justify-end" : "justify-start"}`}
             >
               <div
                 className={`max-w-[70%] rounded-lg p-4 ${
-                  message.role === "user"
+                  message.type === "human"
                     ? "bg-primary text-primary-foreground"
                     : "bg-card border border-border"
                 }`}
               >
-                <p className="text-sm">{message.content}</p>
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
               </div>
             </div>
           ))
@@ -123,8 +271,9 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             className="flex-1"
+            disabled={sending}
           />
-          <Button onClick={handleSend} size="icon">
+          <Button onClick={handleSend} size="icon" disabled={sending}>
             <Send className="h-4 w-4" />
           </Button>
         </div>
