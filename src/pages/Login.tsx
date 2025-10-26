@@ -67,9 +67,9 @@ const Login = () => {
       await authService.signUp(data);
       toast({
         title: "Success",
-        description: "Account created successfully",
+        description: "Account created successfully. Please sign in.",
       });
-      navigate("/dashboard");
+      navigate("/");
     } catch (error) {
       toast({
         title: "Error",

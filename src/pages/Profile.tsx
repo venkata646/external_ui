@@ -4,12 +4,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Mail, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/use-toast";
+import { authService } from "@/lib/auth";
 
 const Profile = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleLogout = () => {
+    authService.signOut();
     toast({
       title: "Logged out",
       description: "You have been successfully logged out",
