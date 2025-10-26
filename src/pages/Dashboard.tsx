@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Settings, User, Search, Send } from "lucide-react";
+import { Settings, User, Search, ChevronUp, Wrench, CreditCard, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import PersonaCard from "@/components/PersonaCard";
 import ChatInterface from "@/components/ChatInterface";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const personas = [
   {
@@ -70,14 +71,34 @@ const Dashboard = () => {
 
         {/* Settings */}
         <div className="p-4 border-t border-border">
-          <Button
-            variant="ghost"
-            className="w-full justify-start"
-            onClick={() => navigate("/settings")}
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full justify-between"
+              >
+                <div className="flex items-center">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </div>
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-56">
+              <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <Wrench className="h-4 w-4 mr-2" />
+                Persona Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/upgrade")}>
+                <CreditCard className="h-4 w-4 mr-2" />
+                Upgrade Plan
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/admin")}>
+                <Shield className="h-4 w-4 mr-2" />
+                Admin Console
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

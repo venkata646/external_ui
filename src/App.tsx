@@ -10,6 +10,8 @@ import PersonaDetail from "./pages/PersonaDetail";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import AdminConsole from "./pages/AdminConsole";
+import UpgradePlan from "./pages/UpgradePlan";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +27,8 @@ const App = () => (
           <Route path="/persona/:id" element={<PersonaDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/admin" element={<AdminConsole />} />
+          <Route path="/upgrade" element={<UpgradePlan />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
