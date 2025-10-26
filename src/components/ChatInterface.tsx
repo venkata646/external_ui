@@ -30,8 +30,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const personaEndpointMap: Record<string, string> = {
   "jenkins specialist": "/chat/jenkins",
-  "jenkins": "/chat/jenkins",
-  // "jira administrator": "/chat/jira",
+  "jira administrator": "/chat/jira",
 };
 
 function getAuthToken(): string | null {
@@ -39,14 +38,33 @@ function getAuthToken(): string | null {
   return raw ?? null;
 }
 
+function getUserIdentity() {
+  return {
+    user_id: localStorage.getItem("user_id") || "test_user",
+    cred_id: localStorage.getItem("cred_id") || "main",
+  };
+}
+
+
 function getJenkinsCreds() {
   return {
-    cred_id: localStorage.getItem("cred_id") || "main",
-    user_id: localStorage.getItem("user_id") || "tool20",
+    cred_id: localStorage.getItem("cred_id") || "",
+    user_id: localStorage.getItem("user_id") || "",
     jenkins_url: localStorage.getItem("jenkins_url") || "",
     username: localStorage.getItem("jenkins_username") || "",
     api_token: localStorage.getItem("jenkins_api_token") || "",
     jenkins_proxy_url: localStorage.getItem("jenkins_proxy_url") || "",
+  };
+}
+
+function getJiraCreds() {
+  return {
+    cred_id: localStorage.getItem("cred_id") || "",
+    user_id: localStorage.getItem("user_id") || "",
+    jira_url: localStorage.getItem("jira_url") || "",
+    jira_email: localStorage.getItem("jira_email") || "",
+    jira_api_token: localStorage.getItem("jira_api_token") || "",
+    jira_proxy_url: localStorage.getItem("jira_proxy_url") || "",
   };
 }
 
@@ -60,40 +78,43 @@ function buildPayload(
   const mentality = "problem-solving";
 
   // only one message (the one just typed)
-  const messages = [
-    { type: "human", content: latestUserMessage.content }
-  ];
-
+  const messages = [{ type: "human", content: latestUserMessage.content }];
   const lowerName = persona.name.toLowerCase();
-
-  if (lowerName.includes("jenkins")) {
-    const creds = getJenkinsCreds();
-    return {
-      messages,
-      cred_id: creds.cred_id,
-      user_id: creds.user_id,
-      mentality,
-      personality,
-      persona_name: persona.name,
-      persona_title: persona.name,
-      jenkins_url: creds.jenkins_url,
-      username: creds.username,
-      api_token: creds.api_token,
-      jenkins_proxy_url: creds.jenkins_proxy_url,
-      ...(threadId ? { thread_id: threadId } : {}), // optional
-    };
-  }
-
-  return {
+  const { user_id, cred_id } = getUserIdentity();
+  const base = {
     messages,
-    cred_id: "main",
-    user_id: "user-1",
+    cred_id,
+    user_id,
     mentality,
     personality,
     persona_name: persona.name,
     persona_title: persona.name,
     ...(threadId ? { thread_id: threadId } : {}),
   };
+
+  if (lowerName.includes("jenkins")) {
+    const creds = getJenkinsCreds();
+    return {
+      ...base,
+      jenkins_url: creds.jenkins_url,
+      username: creds.username,
+      api_token: creds.api_token,
+      jenkins_proxy_url: creds.jenkins_proxy_url,
+    };
+  }
+
+  if (lowerName.includes("jira")) {
+    const creds = getJiraCreds();
+    return {
+      ...base,
+      jira_url: creds.jira_url,
+      jira_email: creds.jira_email,
+      jira_api_token: creds.jira_api_token,
+      jira_proxy_url: creds.jira_proxy_url,
+    };
+  }
+
+  return base;
 }
 
 // Extract assistant text safely (adds support for { reply: "..." })
