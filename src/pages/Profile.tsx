@@ -9,6 +9,7 @@ import { authService } from "@/lib/auth";
 const Profile = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const currentUser = authService.getCurrentUser();
 
   const handleLogout = () => {
     authService.signOut();
@@ -18,6 +19,12 @@ const Profile = () => {
     });
     navigate("/");
   };
+
+  // Redirect if not authenticated
+  if (!currentUser) {
+    navigate("/");
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -38,13 +45,13 @@ const Profile = () => {
             <div className="flex flex-col items-center text-center mb-8">
               <Avatar className="h-24 w-24 mb-4">
                 <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-                  U
+                  {currentUser.name?.[0]?.toUpperCase() || currentUser.email[0].toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <h2 className="text-2xl font-bold mb-1">User Account</h2>
+              <h2 className="text-2xl font-bold mb-1">{currentUser.name || "User Account"}</h2>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Mail className="h-4 w-4" />
-                <span>user@example.com</span>
+                <span>{currentUser.email}</span>
               </div>
             </div>
 
