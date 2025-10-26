@@ -26,26 +26,19 @@ type BackendMessage = { type?: string; content?: string };
 
 // --- CONFIG ------------------------------------------------------------------
 
-// Backend base URL (e.g. http://localhost:8000 or your deployed URL)
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-// Map persona -> endpoint path
 const personaEndpointMap: Record<string, string> = {
-  // match by persona name (case-insensitive); add more as you add personas
   "jenkins specialist": "/chat/jenkins",
   "jenkins": "/chat/jenkins",
-  // "jira specialist": "/chat/jira",
-  // "kubernetes sre": "/chat/kubernetes",
+  // "jira administrator": "/chat/jira",
 };
 
-// Pull an auth token (adjust key to your app’s storage conventions)
 function getAuthToken(): string | null {
-  // ex: localStorage.setItem("auth_token", "Bearer eyJhbGciOi...")
   const raw = localStorage.getItem("auth_token");
   return raw ?? null;
 }
 
-// Optional: read Jenkins creds from localStorage or elsewhere (keeps UI unchanged)
 function getJenkinsCreds() {
   return {
     cred_id: localStorage.getItem("cred_id") || "main",
@@ -57,19 +50,19 @@ function getJenkinsCreds() {
   };
 }
 
-// Build backend payloads per persona. You can extend this switch for others.
+// Build payload using ONLY the latest user message
 function buildPayload(
   persona: Persona,
-  chatMessages: Message[]
+  latestUserMessage: Message,
+  threadId?: string | null
 ): Record<string, any> {
   const personality = "practical";
   const mentality = "problem-solving";
 
-  // Convert UI messages to backend-expected minimal shape
-  const messages = chatMessages.map(m => ({
-    type: m.type,
-    content: m.content,
-  }));
+  // only one message (the one just typed)
+  const messages = [
+    { type: "human", content: latestUserMessage.content }
+  ];
 
   const lowerName = persona.name.toLowerCase();
 
@@ -87,10 +80,10 @@ function buildPayload(
       username: creds.username,
       api_token: creds.api_token,
       jenkins_proxy_url: creds.jenkins_proxy_url,
+      ...(threadId ? { thread_id: threadId } : {}), // optional
     };
   }
 
-  // Default payload (mirrors common fields; add service-specific fields as needed)
   return {
     messages,
     cred_id: "main",
@@ -99,28 +92,22 @@ function buildPayload(
     personality,
     persona_name: persona.name,
     persona_title: persona.name,
+    ...(threadId ? { thread_id: threadId } : {}),
   };
 }
 
-// Extract assistant text from a variety of possible backend shapes safely
+// Extract assistant text safely (adds support for { reply: "..." })
 function extractAssistantText(respJson: any): string {
-  // Common patterns:
-  // 1) { content: "..." }
-  if (respJson?.content && typeof respJson.content === "string") {
-    return respJson.content;
-  }
-  // 2) { answer: "..." }
-  if (respJson?.answer && typeof respJson.answer === "string") {
-    return respJson.answer;
-  }
-  // 3) { messages: [{type:'assistant', content:'...'}, ...] }
+  if (respJson?.reply && typeof respJson.reply === "string") return respJson.reply;
+  if (respJson?.content && typeof respJson.content === "string") return respJson.content;
+  if (respJson?.answer && typeof respJson.answer === "string") return respJson.answer;
+
   const msgs: BackendMessage[] = Array.isArray(respJson?.messages)
     ? respJson.messages
     : [];
   const lastAssistant = [...msgs].reverse().find(m => (m.type ?? "").toLowerCase() === "assistant");
   if (lastAssistant?.content) return lastAssistant.content;
 
-  // Fallback: stringify a small part of response
   return typeof respJson === "string"
     ? respJson
     : JSON.stringify(respJson ?? { message: "No response" }).slice(0, 1200);
@@ -132,49 +119,54 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null); // optional thread continuity
   const navigate = useNavigate();
 
   const resolveEndpoint = (persona: Persona): string => {
     const key = persona.name.toLowerCase();
     const path =
       personaEndpointMap[key] ||
-      // fuzzy keys by contains
       Object.entries(personaEndpointMap).find(([k]) => key.includes(k))?.[1] ||
-      "/chat/jenkins"; // sane default
+      "/chat/jenkins";
     return `${API_BASE}${path}`;
   };
 
   const handleSend = async () => {
     if (!input.trim() || sending) return;
 
+    // 1) Push the user message to the UI
     const userMessage: Message = {
       id: Date.now(),
       type: "human",
       content: input,
     };
-
-    const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
+    setMessages(prev => [...prev, userMessage]);
     setInput("");
     setSending(true);
 
     try {
+      // 2) Send ONLY the new user message to backend
       const endpoint = resolveEndpoint(selectedPersona);
-      const payload = buildPayload(selectedPersona, nextMessages);
+      const payload = buildPayload(selectedPersona, userMessage, threadId);
       const token = getAuthToken();
 
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: token } : {}), // if token already includes "Bearer ", keep as-is
+          ...(token ? { Authorization: token } : {}),
         },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
-      const assistantText = extractAssistantText(data);
 
+      // optional: remember thread_id if backend returns it
+      if (data?.thread_id && typeof data.thread_id === "string") {
+        setThreadId(data.thread_id);
+      }
+
+      const assistantText = extractAssistantText(data);
       const assistantMessage: Message = {
         id: Date.now() + 1,
         type: "assistant",
@@ -182,14 +174,16 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (err: any) {
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        type: "assistant",
-        content:
-          "Request failed. Please check your API base URL, credentials, and network, then try again.",
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          type: "assistant",
+          content:
+            "Request failed. Please check your API base URL, credentials, and network, then try again.",
+        },
+      ]);
     } finally {
       setSending(false);
     }
