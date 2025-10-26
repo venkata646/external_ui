@@ -107,17 +107,13 @@ const Dashboard = () => {
         {/* Header */}
         <div className="h-16 border-b border-border bg-card flex items-center justify-between px-6">
           <h1 className="text-lg font-semibold">Persona Chat</h1>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/profile")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate("/profile")}>
             <User className="h-5 w-5" />
           </Button>
         </div>
 
         {/* Chat Interface */}
-        <ChatInterface selectedPersona={selectedPersona} />
+        <ChatInterface key={selectedPersona.id} selectedPersona={selectedPersona} />
       </div>
     </div>
   );

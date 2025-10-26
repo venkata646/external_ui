@@ -1,5 +1,5 @@
 // external_ui/src/components/ChatInterface.tsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Info } from "lucide-react";
@@ -27,11 +27,6 @@ type BackendMessage = { type?: string; content?: string };
 // --- CONFIG ------------------------------------------------------------------
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-
-const personaEndpointMap: Record<string, string> = {
-  "jenkins specialist": "/chat/jenkins",
-  "jira administrator": "/chat/jira",
-};
 
 function getAuthToken(): string | null {
   const raw = localStorage.getItem("auth_token");
@@ -143,13 +138,20 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
   const [threadId, setThreadId] = useState<string | null>(null); // optional thread continuity
   const navigate = useNavigate();
 
+  // Reset chat when the selected persona changes
+  useEffect(() => {
+    setMessages([]);
+    setThreadId(null);
+    setInput("");
+  // you could also cancel in-flight requests here, if any
+  }, [selectedPersona.id]);
+
   const resolveEndpoint = (persona: Persona): string => {
     const key = persona.name.toLowerCase();
-    const path =
-      personaEndpointMap[key] ||
-      Object.entries(personaEndpointMap).find(([k]) => key.includes(k))?.[1] ||
-      "/chat/jenkins";
-    return `${API_BASE}${path}`;
+    if (key.includes("jenkins")) return `${API_BASE}/chat/jenkins`;
+    if (key.includes("jira")) return `${API_BASE}/chat/jira`;
+    if (key.includes("grafana")) return `${API_BASE}/chat/grafana`; // if you add this backend
+    return `${API_BASE}/chat/jenkins`; // default
   };
 
   const handleSend = async () => {
