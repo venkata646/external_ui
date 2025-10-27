@@ -17,6 +17,39 @@ import { Label } from "@/components/ui/label";
 import { Key, Circle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { authService, tokenStorage, getCurrentUserId } from "@/lib/auth";
+
+/* -------------------------------- Logging ---------------------------------- */
+const LOG_ENABLED = !!import.meta.env.VITE_API_BASE_URL;
+type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
+function log(level: LogLevel, label: string, data?: unknown) {
+  if (!LOG_ENABLED) return;
+  const time = new Date().toISOString();
+  // eslint-disable-next-line no-console
+  console[level === "ERROR" ? "error" : level === "WARN" ? "warn" : "log"](
+    `[${time}] [PERSONA:${label}]`,
+    data ?? ""
+  );
+}
+
+// Redact secrets from any object based on typical secret key names
+function redactSecrets<T extends Record<string, any>>(
+  obj: T,
+  secretKeys: string[] = []
+): T {
+  const SUSPICIOUS = ["password", "token", "secret", "api_key", "apiToken"];
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj ?? {})) {
+    const lower = k.toLowerCase();
+    const flagged =
+      secretKeys.includes(k) ||
+      SUSPICIOUS.some((s) => lower.includes(s.toLowerCase()));
+    out[k] = flagged && typeof v === "string" && v.length > 0 ? "***REDACTED***" : v;
+  }
+  return out as T;
+}
+
+/* ---------------------- Types & Config for persona creds -------------------- */
 
 interface Persona {
   id: number;
@@ -31,8 +64,6 @@ interface PersonaCardProps {
   isSelected: boolean;
   onClick: () => void;
 }
-
-/* ---------------------- Config for persona-specific creds ------------------- */
 
 type FieldType = "text" | "password";
 
@@ -57,7 +88,7 @@ const personaKey = (name: string) => name.trim().toLowerCase();
 // Map persona -> config (extend as you add more personas)
 const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
   // Jenkins
-  "jenkins": {
+  jenkins: {
     endpoint: "/credentials/jenkins/save",
     title: "Enter Jenkins Credentials",
     description: "Set up credentials for Jenkins Engineer",
@@ -68,7 +99,7 @@ const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
     ],
   },
   // Jira
-  "jira": {
+  jira: {
     endpoint: "/credentials/jira/save",
     title: "Enter Jira Credentials",
     description: "Set up credentials for Jira Administrator",
@@ -89,12 +120,11 @@ function getConfigForPersona(name: string): PersonaCredConfig | null {
   return null;
 }
 
-/* ----------------------------- Helpers ------------------------------------- */
+/* -------------------------------- Helpers ---------------------------------- */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 function getAuthToken(): string | null {
-  // Store as "Bearer <jwt>" or whatever your API expects
   return localStorage.getItem("auth_token");
 }
 
@@ -109,7 +139,9 @@ function getSeedValues(keys: string[]): Record<string, string> {
 
 function saveSeedValues(values: Record<string, string>) {
   for (const [k, v] of Object.entries(values)) {
-    try { localStorage.setItem(k, v); } catch {}
+    try {
+      localStorage.setItem(k, v);
+    } catch {}
   }
 }
 
@@ -120,43 +152,99 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
   const [open, setOpen] = useState(false);
 
   // Persona-specific config
-  const credConfig = useMemo(() => getConfigForPersona(persona.name), [persona.name]);
+  const credConfig = useMemo(() => {
+    const cfg = getConfigForPersona(persona.name);
+    log("DEBUG", "CONFIG_RESOLVE", { persona: persona.name, hasConfig: !!cfg });
+    return cfg;
+  }, [persona.name]);
+
+  // Sensitive keys derived from fields marked password + common patterns
+  const sensitiveKeys = useMemo(
+    () => (credConfig?.fields ?? [])
+      .filter((f) => f.type === "password")
+      .map((f) => f.key),
+    [credConfig]
+  );
 
   // Generic form state keyed by field.key
   const [form, setForm] = useState<Record<string, string>>({});
 
   // Common metadata (not shown as inputs)
-  const [userId, setUserId] = useState<string>(localStorage.getItem("user_id") || "tool20");
+  const initialUserId = getCurrentUserId();
+  const [userId, setUserId] = useState<string>(initialUserId ?? "");
   const [credId, setCredId] = useState<string>(localStorage.getItem("cred_id") || "main");
+
+  useEffect(() => {
+    const onAuthChanged = () => {
+      const id = getCurrentUserId() ?? "";
+      log("INFO", "AUTH_CHANGED_EVENT_RECEIVED", { userId: id });
+      setUserId(id);
+    };
+    window.addEventListener("auth:changed", onAuthChanged);
+    return () => window.removeEventListener("auth:changed", onAuthChanged);
+  }, []);
 
   // Initialize form values when dialog opens
   useEffect(() => {
     if (open && credConfig) {
-      const keys = credConfig.fields.map(f => f.key);
+      const keys = credConfig.fields.map((f) => f.key);
       const seed = getSeedValues(keys);
       setForm(seed);
+      log("INFO", "DIALOG_OPEN", {
+        persona: persona.name,
+        seed: redactSecrets(seed, sensitiveKeys),
+      });
+    }
+    // ensure userId is synced on first open/mount
+    const id = getCurrentUserId();
+    if (id && id !== userId) {
+      log("DEBUG", "USER_ID_SYNC", { from: userId, to: id });
+      setUserId(id);
     }
   }, [open, credConfig]);
 
   const onChange = (key: string, value: string) => {
-    setForm(prev => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Log each field edit with redaction where necessary
+      log("DEBUG", "FORM_CHANGE", redactSecrets({ [key]: value }, sensitiveKeys));
+      return next;
+    });
   };
 
   const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const liveUserId = getCurrentUserId();
+
+    if (!authService.isAuthenticated() || !userId) {
+      log("WARN", "SAVE_BLOCKED_NOT_AUTHENTICATED", { userId, liveUserId });
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to save credentials.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (!credConfig) {
-      toast({ title: "Unsupported Persona", description: "No credential form configured for this persona.", variant: "destructive" });
+      log("WARN", "SAVE_BLOCKED_NO_CONFIG", { persona: persona.name });
+      toast({
+        title: "Unsupported Persona",
+        description: "No credential form configured for this persona.",
+        variant: "destructive",
+      });
       return;
     }
 
     // Front-end required validation
-    const missing = credConfig.fields.filter(f => f.required && !form[f.key]);
+    const missing = credConfig.fields.filter((f) => f.required && !form[f.key]);
     if (missing.length) {
+      const missingLabels = missing.map((m) => m.label).join(", ");
+      log("WARN", "VALIDATION_MISSING_FIELDS", { missing: missingLabels });
       toast({
         title: "Missing Fields",
-        description: `Please fill: ${missing.map(m => m.label).join(", ")}`,
+        description: `Please fill: ${missingLabels}`,
         variant: "destructive",
       });
       return;
@@ -164,25 +252,49 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
 
     // Build payload per backend schema + add user_id & cred_id
     const payload: Record<string, any> = {
-      user_id: userId || "tool20",
+      user_id: liveUserId,
       cred_id: credId || "main",
       ...form,
     };
+    log("INFO", "SAVE_REQUEST", {
+      endpoint: `${API_BASE}${credConfig.endpoint}`,
+      payload: redactSecrets(payload, sensitiveKeys),
+      hasAuthHeader: !!tokenStorage.get(),
+    });
 
+    const started = performance.now();
     try {
       const res = await fetch(`${API_BASE}${credConfig.endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(getAuthToken() ? { Authorization: getAuthToken() as string } : {}),
+          ...tokenStorage.getAuthHeader(),
         },
         body: JSON.stringify(payload),
       });
 
+      const ms = Math.round(performance.now() - started);
       if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || `HTTP ${res.status}`);
+        const text = await res.text().catch(() => "");
+        log("ERROR", "SAVE_RESPONSE_ERROR", {
+          status: res.status,
+          duration_ms: ms,
+          body: text?.slice(0, 1000),
+        });
+        throw new Error(text || `HTTP ${res.status}`);
       }
+
+      let respBody: any = null;
+      try {
+        respBody = await res.json();
+      } catch {
+        // Not all endpoints return JSON—ignore
+      }
+      log("INFO", "SAVE_RESPONSE_OK", {
+        status: res.status,
+        duration_ms: ms,
+        body: respBody ?? "<no-json>",
+      });
 
       // Persist for convenience (optional)
       saveSeedValues(form);
@@ -196,6 +308,7 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
 
       setOpen(false);
     } catch (err: any) {
+      log("ERROR", "SAVE_EXCEPTION", { message: err?.message });
       toast({
         title: "Save Failed",
         description: err?.message || "Unable to save credentials.",
@@ -210,12 +323,15 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
         "p-4 cursor-pointer transition-all hover:shadow-md",
         isSelected && "ring-2 ring-primary bg-accent/50"
       )}
-      onClick={onClick}
+      onClick={() => {
+        log("DEBUG", "CARD_CLICK", { persona: persona.name, isSelected });
+        onClick();
+      }}
     >
       <div className="flex gap-3 mb-3">
         <Avatar className="h-16 w-16 flex-shrink-0">
           <AvatarFallback className="text-lg bg-primary/10 text-primary font-semibold">
-            {persona.name.split(" ").map(w => w[0]).join("").slice(0, 2)}
+            {persona.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
           </AvatarFallback>
         </Avatar>
 
@@ -239,15 +355,33 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
 
       {/* Bottom buttons and status */}
       <div className="flex items-center justify-between">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+        <Dialog
+          open={open}
+          onOpenChange={(v) => {
+            setOpen(v);
+            log("DEBUG", "DIALOG_TOGGLE", { open: v, persona: persona.name });
+          }}
+        >
+          <DialogTrigger
+            asChild
+            onClick={(e) => {
+              e.stopPropagation();
+              log("DEBUG", "DIALOG_TRIGGER_CLICK");
+            }}
+          >
             <Button variant="outline" size="sm" className="gap-1 h-7 text-xs">
               <Key className="h-3 w-3" />
               Credentials
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogContent
+            className="sm:max-w-md"
+            onClick={(e) => {
+              e.stopPropagation();
+              // Prevent card onClick
+            }}
+          >
             <DialogHeader>
               <DialogTitle>{credConfig?.title ?? "Enter Credentials"}</DialogTitle>
               <DialogDescription>
@@ -256,19 +390,6 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
             </DialogHeader>
 
             <form onSubmit={handleSaveCredentials} className="space-y-4">
-              {/* Optional: show/edit user_id & cred_id (hidden by default). 
-                  If you'd like to expose them, uncomment the block below. */}
-              {/* <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="user_id">User ID</Label>
-                  <Input id="user_id" value={userId} onChange={(e) => setUserId(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cred_id">Credential ID</Label>
-                  <Input id="cred_id" value={credId} onChange={(e) => setCredId(e.target.value)} />
-                </div>
-              </div> */}
-
               {/* Dynamic fields per persona */}
               {credConfig?.fields.map((f) => (
                 <div className="space-y-2" key={f.key}>
@@ -284,7 +405,14 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
               ))}
 
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    log("DEBUG", "DIALOG_CANCEL_CLICK");
+                    setOpen(false);
+                  }}
+                >
                   Cancel
                 </Button>
                 <Button type="submit">Save Credentials</Button>

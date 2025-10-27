@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { tokenStorage } from "@/lib/auth";
+
 
 interface Persona {
   id: number;
@@ -173,11 +175,19 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
       const payload = buildPayload(selectedPersona, userMessage, threadId);
       const token = getAuthToken();
 
+      // const res = await fetch(endpoint, {
+      //   method: "POST",
+      //   headers: {
+      //     "Content-Type": "application/json",
+      //     ...(token ? { Authorization: token } : {}),
+      //   },
+      //   body: JSON.stringify(payload),
+      // });
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: token } : {}),
+          ...tokenStorage.getAuthHeader(), // adds Bearer correctly
         },
         body: JSON.stringify(payload),
       });
