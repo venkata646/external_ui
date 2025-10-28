@@ -85,7 +85,7 @@ const Dashboard = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-56">
-              <DropdownMenuItem onClick={() => navigate("/settings")}>
+              <DropdownMenuItem onClick={() => navigate("/persona-settings")}>
                 <Wrench className="h-4 w-4 mr-2" />
                 Persona Settings
               </DropdownMenuItem>

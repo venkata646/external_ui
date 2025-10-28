@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import PersonaDetail from "./pages/PersonaDetail";
 import Settings from "./pages/Settings";
+import PersonaSettings from "./pages/PersonaSettings";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import AdminConsole from "./pages/AdminConsole";
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/persona/:id" element={<PersonaDetail />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/persona-settings" element={<PersonaSettings />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<AdminConsole />} />
           <Route path="/upgrade" element={<UpgradePlan />} />
