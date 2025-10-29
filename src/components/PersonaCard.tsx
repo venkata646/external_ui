@@ -19,6 +19,15 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { authService, tokenStorage, getCurrentUserId } from "@/lib/auth";
 
+// shadcn/ui Select
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 /* -------------------------------- Logging ---------------------------------- */
 const LOG_ENABLED = !!import.meta.env.VITE_API_BASE_URL;
 type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
@@ -76,10 +85,12 @@ type CredField = {
 };
 
 type PersonaCredConfig = {
-  endpoint: string;     // path appended to API_BASE
-  fields: CredField[];  // which fields to render and send
-  title?: string;       // optional dialog title override
-  description?: string; // optional dialog subtitle override
+  endpoint: string;                                       // POST: save
+  listEndpoint?: (userId?: string) => string | undefined; // GET: list cred_ids
+  getEndpoint?: (userId: string, credId: string) => string; // GET: fetch one
+  fields: CredField[];              // fields to render and send
+  title?: string;                   // dialog title
+  description?: string;             // dialog subtitle
 };
 
 // Normalize persona names like "Jira Administrator", "Jenkins Specialist"
@@ -90,6 +101,10 @@ const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
   // Jenkins
   jenkins: {
     endpoint: "/credentials/jenkins/save",
+    listEndpoint: (userId?: string) =>
+      userId ? `/credentials/jenkins/list/${userId}` : undefined,
+    getEndpoint: (userId: string, credId: string) =>
+      `/credentials/jenkins/get/${userId}/${credId}?reveal=false`,
     title: "Enter Jenkins Credentials",
     description: "Set up credentials for Jenkins Engineer",
     fields: [
@@ -101,6 +116,10 @@ const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
   // Jira
   jira: {
     endpoint: "/credentials/jira/save",
+    listEndpoint: (userId?: string) =>
+      userId ? `/credentials/jira/list/${userId}` : undefined,
+    getEndpoint: (userId: string, credId: string) =>
+      `/credentials/jira/get/${userId}/${credId}?reveal=false`,
     title: "Enter Jira Credentials",
     description: "Set up credentials for Jira Administrator",
     fields: [
@@ -124,8 +143,17 @@ function getConfigForPersona(name: string): PersonaCredConfig | null {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-function getAuthToken(): string | null {
-  return localStorage.getItem("auth_token");
+// Looks for masked strings like "*****", "***REDACTED***", etc.
+function looksMasked(val: unknown): boolean {
+  if (typeof val !== "string") return false;
+  const v = val.trim();
+  if (!v) return false;
+  return (
+    v === "***REDACTED***" ||
+    /^[*•●]{3,}$/.test(v) ||                // ******
+    /^<hidden>$/i.test(v) ||
+    /^MASKED$/i.test(v)
+  );
 }
 
 // Defaults / previously saved values (optional)
@@ -174,6 +202,15 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
   const [userId, setUserId] = useState<string>(initialUserId ?? "");
   const [credId, setCredId] = useState<string>(localStorage.getItem("cred_id") || "main");
 
+  // State for existing cred IDs
+  const [credIds, setCredIds] = useState<string[]>([]);
+  const [credIdsLoading, setCredIdsLoading] = useState(false);
+  const [credIdsError, setCredIdsError] = useState<string | null>(null);
+  const [isNewCredId, setIsNewCredId] = useState(false);
+
+  // State for loading a specific cred's values
+  const [loadingFields, setLoadingFields] = useState(false);
+
   useEffect(() => {
     const onAuthChanged = () => {
       const id = getCurrentUserId() ?? "";
@@ -184,7 +221,7 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
     return () => window.removeEventListener("auth:changed", onAuthChanged);
   }, []);
 
-  // Initialize form values when dialog opens
+  // Initialize form values when dialog opens + fetch existing cred_ids
   useEffect(() => {
     if (open && credConfig) {
       const keys = credConfig.fields.map((f) => f.key);
@@ -195,18 +232,110 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
         seed: redactSecrets(seed, sensitiveKeys),
       });
     }
+
     // ensure userId is synced on first open/mount
     const id = getCurrentUserId();
     if (id && id !== userId) {
       log("DEBUG", "USER_ID_SYNC", { from: userId, to: id });
       setUserId(id);
     }
-  }, [open, credConfig]);
+
+    // Fetch existing cred IDs for dropdown
+    if (open && credConfig && userId) {
+      const url =
+        typeof credConfig.listEndpoint === "function"
+          ? credConfig.listEndpoint(userId)
+          : credConfig.listEndpoint;
+
+      if (!url) return;
+
+      (async () => {
+        try {
+          setCredIdsLoading(true);
+          setCredIdsError(null);
+          const res = await fetch(`${API_BASE}${url}`, {
+            headers: {
+              "Content-Type": "application/json",
+              ...tokenStorage.getAuthHeader(),
+            },
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          const ids: string[] = Array.isArray(data?.cred_ids) ? data.cred_ids : [];
+          setCredIds(ids);
+          // If last-used cred_id exists in the list, keep it; else default to "main"
+          setIsNewCredId(ids.includes(credId) ? false : (credId && credId !== "main"));
+          log("INFO", "CRED_ID_LIST_OK", { count: ids.length });
+        } catch (err: any) {
+          setCredIdsError(err?.message || "Failed to load credentials");
+          log("ERROR", "CRED_ID_LIST_FAIL", { message: err?.message });
+        } finally {
+          setCredIdsLoading(false);
+        }
+      })();
+    }
+  }, [open, credConfig, userId]);
+
+  // Helper: apply fetched fields to form, respecting secret masking
+  const applyFetchedFields = (fields: Record<string, any>) => {
+    setForm((prev) => {
+      const next = { ...prev };
+      for (const f of credConfig?.fields ?? []) {
+        const incoming = fields?.[f.key];
+        if (incoming == null) continue;
+
+        if (f.type === "password") {
+          // If masked, keep empty; user must re-enter to update
+          next[f.key] = looksMasked(incoming) ? "" : String(incoming);
+        } else {
+          next[f.key] = String(incoming);
+        }
+      }
+      log("DEBUG", "APPLY_FETCHED_FIELDS", redactSecrets(next, sensitiveKeys));
+      return next;
+    });
+  };
+
+  // Fetch fields for a given cred_id and populate the form
+  const fetchAndFillCred = async (cid: string) => {
+    if (!credConfig?.getEndpoint || !userId || !cid) return;
+    try {
+      setLoadingFields(true);
+      const url = `${API_BASE}${credConfig.getEndpoint(userId, cid)}`;
+      log("INFO", "FETCH_CRED_BEGIN", { url, cid });
+      const res = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+          ...tokenStorage.getAuthHeader(),
+        },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data?.status === "success" && data?.fields) {
+        applyFetchedFields(data.fields as Record<string, any>);
+      } else {
+        log("WARN", "FETCH_CRED_NOT_FOUND", { cid, data });
+        // If nothing is found, clear fields
+        setForm({});
+      }
+    } catch (err: any) {
+      log("ERROR", "FETCH_CRED_FAIL", { message: err?.message });
+    } finally {
+      setLoadingFields(false);
+    }
+  };
+
+  // When dialog opens and a valid credId is selected (existing), load it
+  useEffect(() => {
+    if (open && credConfig && userId && credId && !isNewCredId) {
+      fetchAndFillCred(credId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, credConfig, userId]);
 
   const onChange = (key: string, value: string) => {
     setForm((prev) => {
       const next = { ...prev, [key]: value };
-      // Log each field edit with redaction where necessary
       log("DEBUG", "FORM_CHANGE", redactSecrets({ [key]: value }, sensitiveKeys));
       return next;
     });
@@ -232,6 +361,16 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
       toast({
         title: "Unsupported Persona",
         description: "No credential form configured for this persona.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Ensure new cred id is provided if selected
+    if (isNewCredId && !credId) {
+      toast({
+        title: "Credential ID required",
+        description: "Please enter a new credential ID (e.g., main, prod, staging).",
         variant: "destructive",
       });
       return;
@@ -335,7 +474,7 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
           </AvatarFallback>
         </Avatar>
 
-        <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-sm mb-2">{persona.name}</h3>
           <div className="flex flex-wrap gap-1">
             {persona.skills.slice(0, 3).map((skill) => (
@@ -379,7 +518,6 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
             className="sm:max-w-md"
             onClick={(e) => {
               e.stopPropagation();
-              // Prevent card onClick
             }}
           >
             <DialogHeader>
@@ -390,10 +528,90 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
             </DialogHeader>
 
             <form onSubmit={handleSaveCredentials} className="space-y-4">
+              {/* --- Credential ID selector (dropdown + new) --- */}
+              <div className="space-y-2">
+                <Label htmlFor="cred_id">Select Credential</Label>
+
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Select
+                      value={isNewCredId ? "__new__" : credId}
+                      onValueChange={async (val) => {
+                        if (val === "__new__") {
+                          setIsNewCredId(true);
+                          // when creating a new cred, don't keep old values around
+                          setForm({});
+                          return;
+                        }
+                        setIsNewCredId(false);
+                        setCredId(val);
+                        localStorage.setItem("cred_id", val);
+                        // fetch and hydrate fields for this cred
+                        await fetchAndFillCred(val);
+                      }}
+                      disabled={credIdsLoading || !!credIdsError}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={credIdsLoading ? "Loading..." : "Choose credential"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {credIds.map((id) => (
+                          <SelectItem key={id} value={id}>
+                            {id}
+                          </SelectItem>
+                        ))}
+                        {credIds.length > 0 && (
+                          <div className="px-2 py-1 text-xs text-muted-foreground select-none">—</div>
+                        )}
+                        <SelectItem value="__new__">➕ New credential…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {credIdsError && (
+                      <p className="text-xs text-destructive mt-1">Failed to load: {credIdsError}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => {
+                      // quick refresh by toggling dialog
+                      setOpen(false);
+                      setTimeout(() => setOpen(true), 0);
+                    }}
+                  >
+                    Refresh
+                  </Button>
+                </div>
+
+                {isNewCredId && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cred_id_input">New Credential ID</Label>
+                    <Input
+                      id="cred_id_input"
+                      placeholder="e.g., main, prod, staging"
+                      value={credId}
+                      onChange={(e) => setCredId(e.target.value.trim())}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Pick a short, memorable ID. This ID will be used to read/write these credentials later.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Dynamic fields per persona */}
               {credConfig?.fields.map((f) => (
                 <div className="space-y-2" key={f.key}>
-                  <Label htmlFor={f.key}>{f.label}</Label>
+                  <Label htmlFor={f.key}>
+                    {f.label}
+                    {loadingFields && (
+                      <span className="ml-2 text-[10px] text-muted-foreground align-middle">
+                        loading…
+                      </span>
+                    )}
+                  </Label>
                   <Input
                     id={f.key}
                     type={f.type === "password" ? "password" : "text"}
@@ -415,7 +633,7 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
                 >
                   Cancel
                 </Button>
-                <Button type="submit">Save Credentials</Button>
+                <Button type="submit" disabled={loadingFields}>Save Credentials</Button>
               </div>
             </form>
           </DialogContent>
