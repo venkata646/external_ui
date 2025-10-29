@@ -633,7 +633,7 @@ const PersonaCard = ({ persona, isSelected, onClick }: PersonaCardProps) => {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={loadingFields}>Save Credentials</Button>
+                <Button type="submit" disabled={loadingFields}>Use Credentials</Button>
               </div>
             </form>
           </DialogContent>
