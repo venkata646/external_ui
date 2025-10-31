@@ -111,6 +111,7 @@ const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
       { key: "jenkins_url",  label: "Jenkins URL",  placeholder: "https://jenkins.company.com", required: true },
       { key: "username",     label: "Username",     placeholder: "Enter username", required: true },
       { key: "api_token",    label: "API Token",    placeholder: "Enter API token", type: "password", required: true },
+      { key: "jenkins_proxy_url",    label: "Agent Proxy",    placeholder: "Enter Agent Proxy URL", required: true },
     ],
   },
   // Jira
