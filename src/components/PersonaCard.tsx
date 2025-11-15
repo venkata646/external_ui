@@ -110,7 +110,8 @@ const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
     fields: [
       { key: "jenkins_url",  label: "Jenkins URL",  placeholder: "https://jenkins.company.com", required: true },
       { key: "username",     label: "Username",     placeholder: "Enter username", required: true },
-      { key: "api_token",    label: "API Token",    placeholder: "Enter API token", type: "password", required: true },
+      // { key: "api_token",    label: "API Token",    placeholder: "Enter API token", type: "password", required: true },
+      { key: "api_token",    label: "API Token",    placeholder: "Enter API token", required: true },
       { key: "jenkins_proxy_url",    label: "Agent Proxy",    placeholder: "Enter Agent Proxy URL", required: true },
     ],
   },
@@ -126,7 +127,8 @@ const CRED_CONFIGS: Record<string, PersonaCredConfig> = {
     fields: [
       { key: "jira_url",       label: "Jira URL",       placeholder: "https://your-domain.atlassian.net", required: true },
       { key: "jira_email",     label: "Jira Email",     placeholder: "name@company.com", required: true },
-      { key: "jira_api_token", label: "Jira API Token", placeholder: "Enter API token", type: "password", required: true },
+      // { key: "jira_api_token", label: "Jira API Token", placeholder: "Enter API token", type: "password", required: true },
+      { key: "jira_api_token", label: "Jira API Token", placeholder: "Enter API token", required: true },
     ],
   },
 };
