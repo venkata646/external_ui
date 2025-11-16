@@ -303,7 +303,7 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0 h-full">
       {/* Persona Info Banner */}
       <div className="bg-accent/30 border-b border-border p-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -330,7 +330,7 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
         {historyLoading && messages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="flex flex-col items-center gap-3 text-muted-foreground text-sm">

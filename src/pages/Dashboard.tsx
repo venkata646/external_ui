@@ -42,9 +42,10 @@ const Dashboard = () => {
   );
 
   return (
-    <div className="flex h-screen bg-background">
+    // 🔑 Lock app to viewport height & prevent page scrolling
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Sidebar */}
-      <div className="w-64 border-r border-border bg-card flex flex-col">
+      <div className="w-64 border-r border-border bg-card flex flex-col min-h-0">
         {/* Search */}
         <div className="p-4 border-b border-border">
           <div className="relative">
@@ -59,6 +60,7 @@ const Dashboard = () => {
         </div>
 
         {/* Persona Cards */}
+        {/* 🔑 This section gets its own scroll if you add more personas */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {filteredPersonas.map((persona) => (
             <PersonaCard
@@ -104,8 +106,9 @@ const Dashboard = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
+      {/* 🔑 This must be allowed to SHRINK → min-h-0 */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Header (fixed height) */}
         <div className="h-16 border-b border-border bg-card flex items-center justify-between px-6">
           <h1 className="text-lg font-semibold">Persona Chat</h1>
           <Button variant="ghost" size="icon" onClick={() => navigate("/profile")}>
@@ -113,8 +116,13 @@ const Dashboard = () => {
           </Button>
         </div>
 
-        {/* Chat Interface */}
-        <ChatInterface key={selectedPersona.id} selectedPersona={selectedPersona} />
+        {/* Chat Interface fills the remaining space */}
+        <div className="flex-1 min-h-0">
+          <ChatInterface
+            key={selectedPersona.id}
+            selectedPersona={selectedPersona}
+          />
+        </div>
       </div>
     </div>
   );
