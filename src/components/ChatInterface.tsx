@@ -138,15 +138,80 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null); // optional thread continuity
+  const [historyLoading, setHistoryLoading] = useState(false);
   const navigate = useNavigate();
 
   // Reset chat when the selected persona changes
+  // useEffect(() => {
+  //   setMessages([]);
+  //   setThreadId(null);
+  //   setInput("");
+  // // you could also cancel in-flight requests here, if any
+  // }, [selectedPersona.id]);
+  //   When persona changes: reset input and load backend history for that persona
   useEffect(() => {
-    setMessages([]);
-    setThreadId(null);
-    setInput("");
-  // you could also cancel in-flight requests here, if any
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      // clear UI while loading
+      setHistoryLoading(true); 
+      setMessages([]);
+      setThreadId(null);
+      setInput("");
+
+      const endpoint = resolveHistoryEndpoint(selectedPersona);
+
+      try {
+        const res = await fetch(`${endpoint}?limit=1`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...tokenStorage.getAuthHeader(), // adds Bearer <jwt>
+          },
+        });
+
+        if (!res.ok) {
+          // Don’t lie to yourself: if auth is broken or backend fails, just show empty chat.
+          console.warn("Failed to load history", res.status);
+          return;
+        }
+
+        const data = await res.json();
+        if (cancelled) return;
+
+        // data: { thread_id: string | null, messages: [{ role, content }] }
+        const backendMessages = Array.isArray(data?.messages) ? data.messages : [];
+
+        const mapped: Message[] = backendMessages.map((m: any, idx: number) => ({
+          id: Date.now() + idx,
+          type:
+            (m.role ?? "").toLowerCase() === "user" ||
+            (m.role ?? "").toLowerCase() === "human"
+              ? "human"
+              : "assistant",
+          content: m.content ?? "",
+        }));
+
+        if (data?.thread_id && typeof data.thread_id === "string") {
+          setThreadId(data.thread_id);
+        }
+
+        setMessages(mapped);
+      } catch (err) {
+        console.error("Error loading history", err);
+        // On error, leave messages empty; UI will just show the “Start a conversation” text.
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedPersona.id]);
+
 
   const resolveEndpoint = (persona: Persona): string => {
     const key = persona.name.toLowerCase();
@@ -154,6 +219,14 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
     if (key.includes("jira")) return `${API_BASE}/chat/jira`;
     if (key.includes("grafana")) return `${API_BASE}/chat/grafana`; // if you add this backend
     return `${API_BASE}/chat/jenkins`; // default
+  };
+
+  const resolveHistoryEndpoint = (persona: Persona): string => {
+    const key = persona.name.toLowerCase();
+    if (key.includes("jenkins")) return `${API_BASE}/chat/jenkins/history`;
+    if (key.includes("jira")) return `${API_BASE}/chat/jira/history`;
+    if (key.includes("grafana")) return `${API_BASE}/chat/grafana/history`; // when you add it
+    return `${API_BASE}/chat/jenkins/history`; // default
   };
 
   const handleSend = async () => {
@@ -258,7 +331,14 @@ const ChatInterface = ({ selectedPersona }: ChatInterfaceProps) => {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 0 ? (
+        {historyLoading && messages.length === 0 ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 text-muted-foreground text-sm">
+              <div className="h-6 w-6 border-2 border-muted-foreground/40 border-t-transparent rounded-full animate-spin" />
+              <span>Loading conversation…</span>
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md">
               <h2 className="text-xl font-semibold mb-2">
